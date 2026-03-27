@@ -20,6 +20,7 @@ interface ToolViewProps {
 
 interface MatrixRow {
   source: string;
+  title: string;
   year: string;
   objective: string;
   methodology: string;
@@ -27,11 +28,18 @@ interface MatrixRow {
   key_findings: string;
   limitations: string;
   research_gap: string;
+  topic_fit: string;
 }
 
 interface MatrixPayload {
   matrix: MatrixRow[];
   synthesis: string;
+}
+
+interface MatrixInput {
+  criteria: string;
+  topic: string;
+  goal: string;
 }
 
 type SourceMode = "library" | "text";
@@ -89,19 +97,24 @@ Kết quả cần có:
 6. Khoảng trống nghiên cứu`;
     case "matrix":
       return `Hãy phân tích tài liệu này để điền chính xác một hàng trong literature review matrix.
-Tiêu chí ưu tiên của người dùng: ${userInput || "Không có tiêu chí bổ sung."}
+Thông tin định hướng từ người dùng:
+${userInput || "Không có tiêu chí bổ sung."}
+
 Trả về DUY NHẤT một JSON object hợp lệ, không có markdown fence, không có giải thích ngoài JSON.
 Schema bắt buộc:
 {
-  "source": "Tên tài liệu hoặc tác giả. Nếu không có trong nội dung thì dùng tên file được cung cấp",
-  "year": "Năm",
+  "source": "Tác giả, cơ quan hoặc nguồn tài liệu. Nếu không xác định được thì dùng tên file",
+  "title": "Tiêu đề bài báo hoặc tài liệu. Nếu không xác định được thì ghi Không rõ",
+  "year": "Năm công bố",
   "objective": "Mục tiêu nghiên cứu",
-  "methodology": "Phương pháp / thiết kế nghiên cứu",
-  "sample_or_context": "Mẫu / dữ liệu / ngữ cảnh",
+  "methodology": "Phương pháp hoặc thiết kế nghiên cứu",
+  "sample_or_context": "Mẫu, dữ liệu hoặc ngữ cảnh nghiên cứu",
   "key_findings": "Kết quả chính",
   "limitations": "Hạn chế",
-  "research_gap": "Khoảng trống hoặc giá trị cho nghiên cứu tiếp theo"
+  "research_gap": "Khoảng trống hoặc giá trị tiếp theo. Nếu tác giả không nêu trực tiếp, hãy suy luận có cơ sở từ mục tiêu, phương pháp, mẫu, kết quả và hạn chế",
+  "topic_fit": "Mức độ tương thích với đề tài của người dùng: Rất cao, Cao, Trung bình, Thấp, hoặc Chưa đánh giá; kèm 1 câu giải thích ngắn"
 }
+
 Không được bỏ trống field nào. Nếu thiếu dữ liệu ở ô nào thì ghi "Không rõ".`;
     case "topics":
       return `Hãy phân tích toàn bộ tài liệu đã tải lên và liệt kê 10 chủ đề hoặc cụm từ khóa quan trọng nhất.
@@ -150,12 +163,24 @@ ${userInput}`;
   }
 }
 
+function buildMatrixInstruction(input: MatrixInput) {
+  return [
+    input.criteria ? `Tiêu chí ưu tiên của ma trận: ${input.criteria}` : "",
+    input.topic ? `Tên đề tài của người dùng: ${input.topic}` : "",
+    input.goal ? `Mục tiêu nghiên cứu của người dùng: ${input.goal}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) => {
   const [result, setResult] = useState<string | null>(null);
   const [matrixPayload, setMatrixPayload] = useState<MatrixPayload | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [userInput, setUserInput] = useState("");
+  const [matrixTopic, setMatrixTopic] = useState("");
+  const [matrixGoal, setMatrixGoal] = useState("");
   const [sourceMode, setSourceMode] = useState<SourceMode>("text");
   const [citationStyle, setCitationStyle] = useState<CitationStyle>("APA 7");
   const info = TOOL_CONFIG[tool];
@@ -169,6 +194,8 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
     setMatrixPayload(null);
     setCopied(false);
     setUserInput("");
+    setMatrixTopic("");
+    setMatrixGoal("");
     setCitationStyle("APA 7");
     setSourceMode(tool === "writer" || tool === "citation" ? (hasDocuments ? "library" : "text") : "text");
   }, [tool, hasDocuments]);
@@ -195,7 +222,11 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
 
     try {
       if (tool === "matrix") {
-        const matrix = await buildOverviewMatrix(documents, apiKeys, userInput.trim());
+        const matrix = await buildOverviewMatrix(documents, apiKeys, {
+          criteria: userInput.trim(),
+          topic: matrixTopic.trim(),
+          goal: matrixGoal.trim(),
+        });
         setMatrixPayload(matrix);
         setResult(matrix.synthesis || "Đã tạo ma trận tổng quan.");
       } else {
@@ -224,20 +255,22 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
     const worksheet = XLSX.utils.json_to_sheet(
       matrixPayload.matrix.map((row) => ({
         "Nguồn / tài liệu": row.source,
-        Năm: row.year,
+        "Tiêu đề": row.title,
+        "Năm": row.year,
         "Mục tiêu nghiên cứu": row.objective,
         "Phương pháp / thiết kế nghiên cứu": row.methodology,
         "Mẫu / dữ liệu / ngữ cảnh": row.sample_or_context,
         "Kết quả chính": row.key_findings,
         "Hạn chế": row.limitations,
         "Khoảng trống / giá trị tiếp theo": row.research_gap,
+        "Mức độ tương thích với đề tài": row.topic_fit,
       })),
     );
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Overview Matrix");
 
     if (matrixPayload.synthesis) {
-      const synthesisSheet = XLSX.utils.aoa_to_sheet([["Synthesis"], [matrixPayload.synthesis]]);
+      const synthesisSheet = XLSX.utils.aoa_to_sheet([["Tổng hợp nổi bật"], [matrixPayload.synthesis]]);
       XLSX.utils.book_append_sheet(workbook, synthesisSheet, "Synthesis");
     }
 
@@ -253,10 +286,10 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
 
   return (
     <div className="space-y-6">
-      <div className="bg-blue-50/50 p-6 rounded-2xl border border-blue-100">
-        <div className="flex items-center gap-4 mb-4">
-          <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
-            <info.icon className="w-6 h-6 text-white" />
+      <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-6">
+        <div className="mb-4 flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600 shadow-lg shadow-blue-200">
+            <info.icon className="h-6 w-6 text-white" />
           </div>
           <div>
             <h3 className="text-lg font-bold text-gray-900">{info.title}</h3>
@@ -271,21 +304,21 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
                 type="button"
                 onClick={() => setSourceMode("library")}
                 disabled={!hasDocuments}
-                className={`text-xs font-semibold uppercase tracking-wider px-3 py-1 rounded-full border transition-colors ${
+                className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wider transition-colors ${
                   sourceMode === "library"
-                    ? "bg-blue-600 border-blue-600 text-white"
-                    : "bg-white border-gray-300 text-gray-600"
-                } ${!hasDocuments ? "opacity-50 cursor-not-allowed" : ""}`}
+                    ? "border-blue-600 bg-blue-600 text-white"
+                    : "border-gray-300 bg-white text-gray-600"
+                } ${!hasDocuments ? "cursor-not-allowed opacity-50" : ""}`}
               >
                 {documents.length} tài liệu trong thư viện
               </button>
               <button
                 type="button"
                 onClick={() => setSourceMode("text")}
-                className={`text-xs font-semibold uppercase tracking-wider px-3 py-1 rounded-full border transition-colors ${
+                className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wider transition-colors ${
                   sourceMode === "text"
-                    ? "bg-blue-600 border-blue-600 text-white"
-                    : "bg-white border-gray-300 text-gray-600"
+                    ? "border-blue-600 bg-blue-600 text-white"
+                    : "border-gray-300 bg-white text-gray-600"
                 }`}
               >
                 Không bắt buộc tài liệu
@@ -293,10 +326,10 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
             </>
           ) : (
             <>
-              <span className="text-xs font-semibold uppercase tracking-wider px-3 py-1 rounded-full bg-white border text-gray-600">
+              <span className="rounded-full border bg-white px-3 py-1 text-xs font-semibold uppercase tracking-wider text-gray-600">
                 {documents.length} tài liệu trong thư viện
               </span>
-              <span className="text-xs font-semibold uppercase tracking-wider px-3 py-1 rounded-full bg-white border text-gray-600">
+              <span className="rounded-full border bg-white px-3 py-1 text-xs font-semibold uppercase tracking-wider text-gray-600">
                 {info.requiresDocuments ? "Dùng toàn bộ thư viện" : "Không bắt buộc tài liệu"}
               </span>
             </>
@@ -305,7 +338,7 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
 
         {tool === "citation" && (
           <div className="mb-4">
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
               Chọn chuẩn trích dẫn
             </p>
             <div className="flex flex-wrap gap-2">
@@ -314,10 +347,10 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
                   key={style}
                   type="button"
                   onClick={() => setCitationStyle(style)}
-                  className={`text-xs font-semibold px-3 py-2 rounded-full border transition-colors ${
+                  className={`rounded-full border px-3 py-2 text-xs font-semibold transition-colors ${
                     citationStyle === style
-                      ? "bg-blue-600 border-blue-600 text-white"
-                      : "bg-white border-gray-300 text-gray-600"
+                      ? "border-blue-600 bg-blue-600 text-white"
+                      : "border-gray-300 bg-white text-gray-600"
                   }`}
                 >
                   {style}
@@ -327,13 +360,44 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
           </div>
         )}
 
+        {tool === "matrix" && (
+          <div className="mb-4 grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-400">
+                Tên đề tài của bạn
+              </label>
+              <input
+                value={matrixTopic}
+                onChange={(e) => setMatrixTopic(e.target.value)}
+                placeholder="Ví dụ: Ứng dụng AI trong giáo dục đại học"
+                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none transition-all focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-gray-400">
+                Mục tiêu nghiên cứu của bạn
+              </label>
+              <input
+                value={matrixGoal}
+                onChange={(e) => setMatrixGoal(e.target.value)}
+                placeholder="Ví dụ: xác định hướng nghiên cứu, khoảng trống và tài liệu phù hợp nhất"
+                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none transition-all focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+        )}
+
         {info.acceptsUserText && (
           <div className="mb-4">
             <textarea
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
-              placeholder={info.placeholder}
-              className="w-full p-4 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[120px] transition-all"
+              placeholder={
+                tool === "matrix"
+                  ? "Nhập tiêu chí ưu tiên của ma trận, ví dụ: chỉ tập trung vào phương pháp, biến số, kết quả học tập, đạo đức AI..."
+                  : info.placeholder
+              }
+              className="min-h-[120px] w-full rounded-xl border border-gray-200 bg-white p-4 text-sm outline-none transition-all focus:ring-2 focus:ring-blue-500"
             />
           </div>
         )}
@@ -341,9 +405,9 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
         <button
           onClick={handleAction}
           disabled={isLoading}
-          className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-md disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 font-bold text-white shadow-md transition-all hover:bg-blue-700 disabled:opacity-50"
         >
-          {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+          {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
           {isLoading ? "Đang xử lý..." : info.primaryAction}
         </button>
       </div>
@@ -352,37 +416,38 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden"
+          className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"
         >
-          <div className="p-4 border-b bg-gray-50 flex items-center justify-between">
-            <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Kết quả phân tích</span>
+          <div className="flex items-center justify-between border-b bg-gray-50 p-4">
+            <span className="text-xs font-bold uppercase tracking-widest text-gray-400">Kết quả phân tích</span>
             <div className="flex items-center gap-4">
               {tool === "matrix" && matrixPayload?.matrix.length ? (
                 <button
                   onClick={exportMatrixToExcel}
-                  className="text-xs font-medium text-gray-500 hover:text-blue-600 transition-colors"
+                  className="text-xs font-medium text-gray-500 transition-colors hover:text-blue-600"
                 >
                   Xuất Excel
                 </button>
               ) : null}
               <button
                 onClick={copyToClipboard}
-                className="flex items-center gap-2 text-xs font-medium text-gray-500 hover:text-blue-600 transition-colors"
+                className="flex items-center gap-2 text-xs font-medium text-gray-500 transition-colors hover:text-blue-600"
               >
-                {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
                 {copied ? "Đã sao chép" : "Sao chép"}
               </button>
             </div>
           </div>
 
           {tool === "matrix" && matrixPayload ? (
-            <div className="p-6 space-y-6">
+            <div className="space-y-6 p-6">
               {matrixPayload.matrix.length ? (
-                <div className="overflow-x-auto border rounded-xl">
+                <div className="overflow-x-auto rounded-xl border">
                   <table className="min-w-full text-sm">
                     <thead className="bg-gray-50 text-gray-600">
                       <tr>
                         <th className="px-4 py-3 text-left font-semibold">Nguồn / tài liệu</th>
+                        <th className="px-4 py-3 text-left font-semibold">Tiêu đề</th>
                         <th className="px-4 py-3 text-left font-semibold">Năm</th>
                         <th className="px-4 py-3 text-left font-semibold">Mục tiêu nghiên cứu</th>
                         <th className="px-4 py-3 text-left font-semibold">Phương pháp</th>
@@ -390,12 +455,14 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
                         <th className="px-4 py-3 text-left font-semibold">Kết quả chính</th>
                         <th className="px-4 py-3 text-left font-semibold">Hạn chế</th>
                         <th className="px-4 py-3 text-left font-semibold">Khoảng trống / giá trị tiếp theo</th>
+                        <th className="px-4 py-3 text-left font-semibold">Mức độ tương thích với đề tài</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
                       {matrixPayload.matrix.map((row, index) => (
                         <tr key={`${row.source}-${index}`} className="align-top">
                           <td className="px-4 py-3 font-medium text-gray-900">{row.source}</td>
+                          <td className="px-4 py-3">{row.title}</td>
                           <td className="px-4 py-3">{row.year}</td>
                           <td className="px-4 py-3">{row.objective}</td>
                           <td className="px-4 py-3">{row.methodology}</td>
@@ -403,6 +470,7 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
                           <td className="px-4 py-3">{row.key_findings}</td>
                           <td className="px-4 py-3">{row.limitations}</td>
                           <td className="px-4 py-3">{row.research_gap}</td>
+                          <td className="px-4 py-3">{row.topic_fit}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -410,23 +478,22 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
                 </div>
               ) : (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
-                  <h4 className="text-sm font-bold text-amber-900 mb-2">Chưa tạo được hàng ma trận</h4>
-                  <p className="text-sm text-amber-800 leading-relaxed">
-                    Hệ thống chưa trích xuất được đủ trường để dựng ma trận từ các tài liệu hiện tại.
-                    Tôi đã chuyển logic sang phân tích từng tài liệu riêng; nếu vẫn gặp trường hợp này thì nhiều khả năng PDF không có text layer rõ hoặc nội dung quá nhiễu.
+                  <h4 className="mb-2 text-sm font-bold text-amber-900">Chưa tạo được hàng ma trận</h4>
+                  <p className="text-sm leading-relaxed text-amber-800">
+                    Hệ thống chưa trích xuất được đủ trường để dựng ma trận từ các tài liệu hiện tại. Nếu tình trạng này lặp lại, nhiều khả năng PDF không có text layer rõ hoặc nội dung trích quá nhiễu.
                   </p>
                 </div>
               )}
 
               <div className="rounded-xl border bg-gray-50 p-5">
-                <h4 className="text-sm font-bold text-gray-900 mb-2">Tổng hợp nổi bật</h4>
-                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                  {matrixPayload.synthesis || "Không có thông tin đủ để tổng hợp."}
-                </p>
+                <h4 className="mb-3 text-sm font-bold text-gray-900">Tổng hợp nổi bật</h4>
+                <div className="prose prose-sm max-w-none text-gray-700">
+                  <Markdown>{matrixPayload.synthesis || "Không có thông tin đủ để tổng hợp."}</Markdown>
+                </div>
               </div>
             </div>
           ) : (
-            <div className="p-6 prose prose-sm max-w-none text-gray-700 leading-relaxed markdown-body">
+            <div className="markdown-body prose prose-sm max-w-none p-6 leading-relaxed text-gray-700">
               <Markdown>{result}</Markdown>
             </div>
           )}
@@ -439,9 +506,10 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
 async function buildOverviewMatrix(
   documents: DocumentData[],
   apiKeys: ApiKeys,
-  userInput: string,
+  matrixInput: MatrixInput,
 ): Promise<MatrixPayload> {
   const rows: MatrixRow[] = [];
+  const matrixInstruction = buildMatrixInstruction(matrixInput);
 
   for (const document of documents) {
     const contextText = `Tên file: ${document.filename}
@@ -451,47 +519,57 @@ ${document.text.slice(0, MAX_CHARS_PER_DOC)}`;
 
     const response = await analyzeDocument(
       contextText,
-      buildPrompt("matrix", userInput, true, "library", "APA 7"),
+      buildPrompt("matrix", matrixInstruction, true, "library", "APA 7"),
       apiKeys,
     );
-    rows.push(parseMatrixRow(response, document.filename));
+    rows.push(parseMatrixRow(response, document.filename, matrixInput));
   }
 
   const synthesisSeed = rows
     .map(
       (row, index) =>
-        `Tài liệu ${index + 1}: ${row.source} | ${row.year} | ${row.objective} | ${row.methodology} | ${row.sample_or_context} | ${row.key_findings} | ${row.limitations} | ${row.research_gap}`,
+        `Tài liệu ${index + 1}: ${row.source} | ${row.title} | ${row.year} | ${row.objective} | ${row.methodology} | ${row.sample_or_context} | ${row.key_findings} | ${row.limitations} | ${row.research_gap} | ${row.topic_fit}`,
     )
     .join("\n");
 
   const synthesis = await analyzeDocument(
     synthesisSeed,
     `Hãy viết phần tổng hợp nổi bật từ ma trận tài liệu sau.
-Yêu cầu bổ sung: ${userInput || "Không có yêu cầu bổ sung."}
-Tập trung vào:
-1. Mẫu hình chung
-2. Khác biệt giữa các nghiên cứu
-3. Khoảng trống nghiên cứu quan trọng nhất`,
+Yêu cầu bổ sung:
+${matrixInstruction || "Không có yêu cầu bổ sung."}
+
+Format kết quả bằng Markdown rõ ràng, dùng đúng các tiêu đề sau:
+## Mẫu hình chung
+- gạch đầu dòng ngắn, trực diện
+## Khác biệt giữa các nghiên cứu
+- gạch đầu dòng ngắn, trực diện
+## Khoảng trống nghiên cứu quan trọng
+- gạch đầu dòng ngắn, trực diện
+## Hàm ý cho đề tài của người dùng
+- gạch đầu dòng ngắn, trực diện
+
+Nếu tác giả không nêu trực tiếp khoảng trống nghiên cứu, hãy suy luận có cơ sở từ mục tiêu, phương pháp, mẫu, kết quả và hạn chế.`,
     apiKeys,
   );
 
   return { matrix: rows, synthesis };
 }
 
-function parseMatrixRow(raw: string, fallbackSource: string): MatrixRow {
+function parseMatrixRow(raw: string, fallbackSource: string, matrixInput: MatrixInput): MatrixRow {
   const normalized = raw.trim();
   const jsonCandidate = normalized.startsWith("{")
     ? normalized
     : normalized.match(/\{[\s\S]*\}/)?.[0];
 
   if (!jsonCandidate) {
-    return buildFallbackMatrixRow(fallbackSource);
+    return buildFallbackMatrixRow(fallbackSource, matrixInput);
   }
 
   try {
     const row = JSON.parse(jsonCandidate) as Partial<MatrixRow>;
     return {
       source: String(row.source || fallbackSource || "Không rõ"),
+      title: String(row.title || "Không rõ"),
       year: String(row.year || "Không rõ"),
       objective: String(row.objective || "Không rõ"),
       methodology: String(row.methodology || "Không rõ"),
@@ -499,15 +577,19 @@ function parseMatrixRow(raw: string, fallbackSource: string): MatrixRow {
       key_findings: String(row.key_findings || "Không rõ"),
       limitations: String(row.limitations || "Không rõ"),
       research_gap: String(row.research_gap || "Không rõ"),
+      topic_fit: String(
+        row.topic_fit || (matrixInput.topic || matrixInput.goal ? "Chưa đánh giá rõ mức độ tương thích" : "Chưa đánh giá"),
+      ),
     };
   } catch {
-    return buildFallbackMatrixRow(fallbackSource);
+    return buildFallbackMatrixRow(fallbackSource, matrixInput);
   }
 }
 
-function buildFallbackMatrixRow(source: string): MatrixRow {
+function buildFallbackMatrixRow(source: string, matrixInput: MatrixInput): MatrixRow {
   return {
     source: source || "Không rõ",
+    title: "Không rõ",
     year: "Không rõ",
     objective: "Không rõ",
     methodology: "Không rõ",
@@ -515,5 +597,6 @@ function buildFallbackMatrixRow(source: string): MatrixRow {
     key_findings: "Không rõ",
     limitations: "Không rõ",
     research_gap: "Không rõ",
+    topic_fit: matrixInput.topic || matrixInput.goal ? "Chưa đánh giá rõ mức độ tương thích" : "Chưa đánh giá",
   };
 }
