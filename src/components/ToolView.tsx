@@ -89,6 +89,7 @@ Kết quả cần có:
     case "matrix":
       return `Hãy tạo một literature review matrix dựa trên toàn bộ tài liệu đã tải lên.
 Tiêu chí ưu tiên của người dùng: ${userInput || "Không có tiêu chí bổ sung."}
+Số tài liệu đầu vào: ${hasDocuments ? "Có tài liệu trong thư viện, hãy cố gắng tạo tối thiểu 1 hàng cho mỗi tài liệu nếu đọc được." : "Không có tài liệu"}
 Hãy trả về DUY NHẤT một JSON object hợp lệ, không có markdown fence, không có giải thích ngoài JSON.
 Schema bắt buộc:
 {
@@ -106,7 +107,9 @@ Schema bắt buộc:
   ],
   "synthesis": "Tóm tắt ngắn các mẫu hình nổi bật trên toàn bộ ma trận"
 }
-Mỗi hàng là một tài liệu. Nếu thiếu dữ liệu ở cột nào thì ghi "Không rõ".`;
+Mỗi hàng là một tài liệu. Nếu thiếu dữ liệu ở cột nào thì ghi "Không rõ".
+KHÔNG được trả về "matrix": [] nếu có thể đọc được ít nhất một tài liệu.
+Nếu chỉ trích xuất được một phần thông tin, vẫn phải tạo các hàng với giá trị "Không rõ" cho ô còn thiếu.`;
     case "topics":
       return `Hãy phân tích toàn bộ tài liệu đã tải lên và liệt kê 10 chủ đề hoặc cụm từ khóa quan trọng nhất.
 Yêu cầu bổ sung: ${userInput || "Ưu tiên các chủ đề có tính tổng quát cao và lặp lại giữa nhiều tài liệu."}
@@ -381,38 +384,48 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
               </button>
             </div>
           </div>
-          {tool === "matrix" && matrixPayload?.matrix.length ? (
+          {tool === "matrix" && matrixPayload ? (
             <div className="p-6 space-y-6">
-              <div className="overflow-x-auto border rounded-xl">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-gray-50 text-gray-600">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-semibold">Nguồn / tài liệu</th>
-                      <th className="px-4 py-3 text-left font-semibold">Năm</th>
-                      <th className="px-4 py-3 text-left font-semibold">Mục tiêu nghiên cứu</th>
-                      <th className="px-4 py-3 text-left font-semibold">Phương pháp</th>
-                      <th className="px-4 py-3 text-left font-semibold">Mẫu / dữ liệu / ngữ cảnh</th>
-                      <th className="px-4 py-3 text-left font-semibold">Kết quả chính</th>
-                      <th className="px-4 py-3 text-left font-semibold">Hạn chế</th>
-                      <th className="px-4 py-3 text-left font-semibold">Khoảng trống / giá trị tiếp theo</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {matrixPayload.matrix.map((row, index) => (
-                      <tr key={`${row.source}-${index}`} className="align-top">
-                        <td className="px-4 py-3 font-medium text-gray-900">{row.source}</td>
-                        <td className="px-4 py-3">{row.year}</td>
-                        <td className="px-4 py-3">{row.objective}</td>
-                        <td className="px-4 py-3">{row.methodology}</td>
-                        <td className="px-4 py-3">{row.sample_or_context}</td>
-                        <td className="px-4 py-3">{row.key_findings}</td>
-                        <td className="px-4 py-3">{row.limitations}</td>
-                        <td className="px-4 py-3">{row.research_gap}</td>
+              {matrixPayload.matrix.length ? (
+                <div className="overflow-x-auto border rounded-xl">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-600">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-semibold">Nguồn / tài liệu</th>
+                        <th className="px-4 py-3 text-left font-semibold">Năm</th>
+                        <th className="px-4 py-3 text-left font-semibold">Mục tiêu nghiên cứu</th>
+                        <th className="px-4 py-3 text-left font-semibold">Phương pháp</th>
+                        <th className="px-4 py-3 text-left font-semibold">Mẫu / dữ liệu / ngữ cảnh</th>
+                        <th className="px-4 py-3 text-left font-semibold">Kết quả chính</th>
+                        <th className="px-4 py-3 text-left font-semibold">Hạn chế</th>
+                        <th className="px-4 py-3 text-left font-semibold">Khoảng trống / giá trị tiếp theo</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y">
+                      {matrixPayload.matrix.map((row, index) => (
+                        <tr key={`${row.source}-${index}`} className="align-top">
+                          <td className="px-4 py-3 font-medium text-gray-900">{row.source}</td>
+                          <td className="px-4 py-3">{row.year}</td>
+                          <td className="px-4 py-3">{row.objective}</td>
+                          <td className="px-4 py-3">{row.methodology}</td>
+                          <td className="px-4 py-3">{row.sample_or_context}</td>
+                          <td className="px-4 py-3">{row.key_findings}</td>
+                          <td className="px-4 py-3">{row.limitations}</td>
+                          <td className="px-4 py-3">{row.research_gap}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
+                  <h4 className="text-sm font-bold text-amber-900 mb-2">Chưa tạo được hàng ma trận</h4>
+                  <p className="text-sm text-amber-800 leading-relaxed">
+                    Hệ thống chưa trích xuất được đủ trường để dựng ma trận từ các tài liệu hiện tại.
+                    Hãy thử nhập rõ hơn tiêu chí ưu tiên của ma trận hoặc tải lên PDF có text layer rõ hơn.
+                  </p>
+                </div>
+              )}
 
               {matrixPayload.synthesis ? (
                 <div className="rounded-xl border bg-gray-50 p-5">
@@ -421,7 +434,14 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
                     {matrixPayload.synthesis}
                   </p>
                 </div>
-              ) : null}
+              ) : matrixPayload.matrix.length ? null : (
+                <div className="rounded-xl border bg-gray-50 p-5">
+                  <h4 className="text-sm font-bold text-gray-900 mb-2">Ghi chú hệ thống</h4>
+                  <p className="text-sm text-gray-700 leading-relaxed">
+                    Không có dữ liệu để tổng hợp.
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             <div className="p-6 prose prose-sm max-w-none text-gray-700 leading-relaxed markdown-body">
