@@ -39,6 +39,7 @@ type CitationStyle = "APA 7" | "MLA 9" | "Vancouver" | "IEEE" | "Chicago";
 
 const MAX_CORPUS_CHARS = 28000;
 const MAX_CHARS_PER_DOC = 6000;
+const CITATION_STYLES: CitationStyle[] = ["APA 7", "MLA 9", "Vancouver", "IEEE", "Chicago"];
 
 function buildCorpus(documents: DocumentData[]) {
   let remaining = MAX_CORPUS_CHARS;
@@ -87,29 +88,21 @@ Kết quả cần có:
 5. Hạn chế lặp lại giữa các nghiên cứu
 6. Khoảng trống nghiên cứu`;
     case "matrix":
-      return `Hãy tạo một literature review matrix dựa trên toàn bộ tài liệu đã tải lên.
+      return `Hãy phân tích tài liệu này để điền chính xác một hàng trong literature review matrix.
 Tiêu chí ưu tiên của người dùng: ${userInput || "Không có tiêu chí bổ sung."}
-Số tài liệu đầu vào: ${hasDocuments ? "Có tài liệu trong thư viện, hãy cố gắng tạo tối thiểu 1 hàng cho mỗi tài liệu nếu đọc được." : "Không có tài liệu"}
-Hãy trả về DUY NHẤT một JSON object hợp lệ, không có markdown fence, không có giải thích ngoài JSON.
+Trả về DUY NHẤT một JSON object hợp lệ, không có markdown fence, không có giải thích ngoài JSON.
 Schema bắt buộc:
 {
-  "matrix": [
-    {
-      "source": "Tên tài liệu hoặc tác giả",
-      "year": "Năm",
-      "objective": "Mục tiêu nghiên cứu",
-      "methodology": "Phương pháp / thiết kế nghiên cứu",
-      "sample_or_context": "Mẫu / dữ liệu / ngữ cảnh",
-      "key_findings": "Kết quả chính",
-      "limitations": "Hạn chế",
-      "research_gap": "Khoảng trống hoặc giá trị cho nghiên cứu tiếp theo"
-    }
-  ],
-  "synthesis": "Tóm tắt ngắn các mẫu hình nổi bật trên toàn bộ ma trận"
+  "source": "Tên tài liệu hoặc tác giả. Nếu không có trong nội dung thì dùng tên file được cung cấp",
+  "year": "Năm",
+  "objective": "Mục tiêu nghiên cứu",
+  "methodology": "Phương pháp / thiết kế nghiên cứu",
+  "sample_or_context": "Mẫu / dữ liệu / ngữ cảnh",
+  "key_findings": "Kết quả chính",
+  "limitations": "Hạn chế",
+  "research_gap": "Khoảng trống hoặc giá trị cho nghiên cứu tiếp theo"
 }
-Mỗi hàng là một tài liệu. Nếu thiếu dữ liệu ở cột nào thì ghi "Không rõ".
-KHÔNG được trả về "matrix": [] nếu có thể đọc được ít nhất một tài liệu.
-Nếu chỉ trích xuất được một phần thông tin, vẫn phải tạo các hàng với giá trị "Không rõ" cho ô còn thiếu.`;
+Không được bỏ trống field nào. Nếu thiếu dữ liệu ở ô nào thì ghi "Không rõ".`;
     case "topics":
       return `Hãy phân tích toàn bộ tài liệu đã tải lên và liệt kê 10 chủ đề hoặc cụm từ khóa quan trọng nhất.
 Yêu cầu bổ sung: ${userInput || "Ưu tiên các chủ đề có tính tổng quát cao và lặp lại giữa nhiều tài liệu."}
@@ -201,20 +194,20 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
     setMatrixPayload(null);
 
     try {
-      const prompt = buildPrompt(tool, userInput.trim(), hasDocuments, sourceMode, citationStyle);
-      const contextText =
-        sourceMode === "library" && hasDocuments && corpusText
-          ? corpusText
-          : `Người dùng không cung cấp tài liệu nguồn. Hãy xử lý dựa trên yêu cầu sau:\n${userInput.trim()}`;
-
-      const response = await analyzeDocument(contextText, prompt, apiKeys);
       if (tool === "matrix") {
-        const parsedMatrix = parseMatrixPayload(response);
-        if (parsedMatrix) {
-          setMatrixPayload(parsedMatrix);
-        }
+        const matrix = await buildOverviewMatrix(documents, apiKeys, userInput.trim());
+        setMatrixPayload(matrix);
+        setResult(matrix.synthesis || "Đã tạo ma trận tổng quan.");
+      } else {
+        const prompt = buildPrompt(tool, userInput.trim(), hasDocuments, sourceMode, citationStyle);
+        const contextText =
+          sourceMode === "library" && hasDocuments && corpusText
+            ? corpusText
+            : `Người dùng không cung cấp tài liệu nguồn. Hãy xử lý dựa trên yêu cầu sau:\n${userInput.trim()}`;
+
+        const response = await analyzeDocument(contextText, prompt, apiKeys);
+        setResult(response);
       }
-      setResult(response);
     } catch (error) {
       console.error(error);
       setResult("Đã có lỗi xảy ra. Vui lòng thử lại.");
@@ -253,7 +246,6 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
 
   const copyToClipboard = () => {
     if (!result) return;
-
     navigator.clipboard.writeText(result);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -317,7 +309,7 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
               Chọn chuẩn trích dẫn
             </p>
             <div className="flex flex-wrap gap-2">
-              {(["APA 7", "MLA 9", "Vancouver", "IEEE", "Chicago"] as CitationStyle[]).map((style) => (
+              {CITATION_STYLES.map((style) => (
                 <button
                   key={style}
                   type="button"
@@ -363,9 +355,7 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
           className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden"
         >
           <div className="p-4 border-b bg-gray-50 flex items-center justify-between">
-            <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-              Kết quả phân tích
-            </span>
+            <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Kết quả phân tích</span>
             <div className="flex items-center gap-4">
               {tool === "matrix" && matrixPayload?.matrix.length ? (
                 <button
@@ -384,6 +374,7 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
               </button>
             </div>
           </div>
+
           {tool === "matrix" && matrixPayload ? (
             <div className="p-6 space-y-6">
               {matrixPayload.matrix.length ? (
@@ -422,26 +413,17 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
                   <h4 className="text-sm font-bold text-amber-900 mb-2">Chưa tạo được hàng ma trận</h4>
                   <p className="text-sm text-amber-800 leading-relaxed">
                     Hệ thống chưa trích xuất được đủ trường để dựng ma trận từ các tài liệu hiện tại.
-                    Hãy thử nhập rõ hơn tiêu chí ưu tiên của ma trận hoặc tải lên PDF có text layer rõ hơn.
+                    Tôi đã chuyển logic sang phân tích từng tài liệu riêng; nếu vẫn gặp trường hợp này thì nhiều khả năng PDF không có text layer rõ hoặc nội dung quá nhiễu.
                   </p>
                 </div>
               )}
 
-              {matrixPayload.synthesis ? (
-                <div className="rounded-xl border bg-gray-50 p-5">
-                  <h4 className="text-sm font-bold text-gray-900 mb-2">Tổng hợp nổi bật</h4>
-                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                    {matrixPayload.synthesis}
-                  </p>
-                </div>
-              ) : matrixPayload.matrix.length ? null : (
-                <div className="rounded-xl border bg-gray-50 p-5">
-                  <h4 className="text-sm font-bold text-gray-900 mb-2">Ghi chú hệ thống</h4>
-                  <p className="text-sm text-gray-700 leading-relaxed">
-                    Không có dữ liệu để tổng hợp.
-                  </p>
-                </div>
-              )}
+              <div className="rounded-xl border bg-gray-50 p-5">
+                <h4 className="text-sm font-bold text-gray-900 mb-2">Tổng hợp nổi bật</h4>
+                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                  {matrixPayload.synthesis || "Không có thông tin đủ để tổng hợp."}
+                </p>
+              </div>
             </div>
           ) : (
             <div className="p-6 prose prose-sm max-w-none text-gray-700 leading-relaxed markdown-body">
@@ -454,36 +436,84 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
   );
 };
 
-function parseMatrixPayload(raw: string): MatrixPayload | null {
+async function buildOverviewMatrix(
+  documents: DocumentData[],
+  apiKeys: ApiKeys,
+  userInput: string,
+): Promise<MatrixPayload> {
+  const rows: MatrixRow[] = [];
+
+  for (const document of documents) {
+    const contextText = `Tên file: ${document.filename}
+Số trang: ${document.numpages}
+Nội dung trích:
+${document.text.slice(0, MAX_CHARS_PER_DOC)}`;
+
+    const response = await analyzeDocument(
+      contextText,
+      buildPrompt("matrix", userInput, true, "library", "APA 7"),
+      apiKeys,
+    );
+    rows.push(parseMatrixRow(response, document.filename));
+  }
+
+  const synthesisSeed = rows
+    .map(
+      (row, index) =>
+        `Tài liệu ${index + 1}: ${row.source} | ${row.year} | ${row.objective} | ${row.methodology} | ${row.sample_or_context} | ${row.key_findings} | ${row.limitations} | ${row.research_gap}`,
+    )
+    .join("\n");
+
+  const synthesis = await analyzeDocument(
+    synthesisSeed,
+    `Hãy viết phần tổng hợp nổi bật từ ma trận tài liệu sau.
+Yêu cầu bổ sung: ${userInput || "Không có yêu cầu bổ sung."}
+Tập trung vào:
+1. Mẫu hình chung
+2. Khác biệt giữa các nghiên cứu
+3. Khoảng trống nghiên cứu quan trọng nhất`,
+    apiKeys,
+  );
+
+  return { matrix: rows, synthesis };
+}
+
+function parseMatrixRow(raw: string, fallbackSource: string): MatrixRow {
   const normalized = raw.trim();
   const jsonCandidate = normalized.startsWith("{")
     ? normalized
     : normalized.match(/\{[\s\S]*\}/)?.[0];
 
   if (!jsonCandidate) {
-    return null;
+    return buildFallbackMatrixRow(fallbackSource);
   }
 
   try {
-    const parsed = JSON.parse(jsonCandidate) as Partial<MatrixPayload>;
-    if (!Array.isArray(parsed.matrix)) {
-      return null;
-    }
-
+    const row = JSON.parse(jsonCandidate) as Partial<MatrixRow>;
     return {
-      matrix: parsed.matrix.map((row) => ({
-        source: String((row as Partial<MatrixRow>).source || "Không rõ"),
-        year: String((row as Partial<MatrixRow>).year || "Không rõ"),
-        objective: String((row as Partial<MatrixRow>).objective || "Không rõ"),
-        methodology: String((row as Partial<MatrixRow>).methodology || "Không rõ"),
-        sample_or_context: String((row as Partial<MatrixRow>).sample_or_context || "Không rõ"),
-        key_findings: String((row as Partial<MatrixRow>).key_findings || "Không rõ"),
-        limitations: String((row as Partial<MatrixRow>).limitations || "Không rõ"),
-        research_gap: String((row as Partial<MatrixRow>).research_gap || "Không rõ"),
-      })),
-      synthesis: String(parsed.synthesis || ""),
+      source: String(row.source || fallbackSource || "Không rõ"),
+      year: String(row.year || "Không rõ"),
+      objective: String(row.objective || "Không rõ"),
+      methodology: String(row.methodology || "Không rõ"),
+      sample_or_context: String(row.sample_or_context || "Không rõ"),
+      key_findings: String(row.key_findings || "Không rõ"),
+      limitations: String(row.limitations || "Không rõ"),
+      research_gap: String(row.research_gap || "Không rõ"),
     };
   } catch {
-    return null;
+    return buildFallbackMatrixRow(fallbackSource);
   }
+}
+
+function buildFallbackMatrixRow(source: string): MatrixRow {
+  return {
+    source: source || "Không rõ",
+    year: "Không rõ",
+    objective: "Không rõ",
+    methodology: "Không rõ",
+    sample_or_context: "Không rõ",
+    key_findings: "Không rõ",
+    limitations: "Không rõ",
+    research_gap: "Không rõ",
+  };
 }
