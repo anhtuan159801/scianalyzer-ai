@@ -1,0 +1,5 @@
+{
+  "name": "SciAnalyzer AI",
+  "description": "Hệ thống phân tích tài liệu nghiên cứu khoa học thông minh với khả năng hỏi đáp grounded và tóm tắt đa tầng.",
+  "requestFramePermissions": []
+}
