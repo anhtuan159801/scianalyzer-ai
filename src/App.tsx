@@ -1,30 +1,20 @@
 import React, { Suspense, lazy, useMemo, useState } from "react";
 import {
-  ArrowLeft,
   Book,
   BookOpen,
   ChevronRight,
-  Database,
-  FileSearch,
-  FileText,
-  Hash,
   Home,
   Info,
   Library,
   MessageSquare,
-  Notebook,
-  PenTool,
-  Quote,
-  Search,
   Settings,
-  ShieldCheck,
   Sparkles,
-  Users,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Dashboard } from "./components/Dashboard";
 import { FileUpload } from "./components/FileUpload";
 import { cn } from "./lib/utils";
+import { TOOL_CONFIG, TOOL_DEFINITIONS, type ToolId } from "./lib/toolConfig";
 import type { ApiKeys } from "./services/llmService";
 
 const ChatPanel = lazy(() =>
@@ -65,76 +55,10 @@ interface DocumentData {
 }
 
 type RightTab = "chat" | "summary" | "info";
-type LeftTab =
-  | "dashboard"
-  | "library"
-  | "notebooks"
-  | "gallery"
-  | "writer"
-  | "chat-pdf"
-  | "lit-review"
-  | "topics"
-  | "paraphraser"
-  | "citation"
-  | "extract"
-  | "detector"
-  | "diagram"
-  | "search"
-  | "review"
-  | "report"
-  | "analyse";
-
-const DOCUMENT_TOOL_TABS = new Set<LeftTab>([
-  "writer",
-  "chat-pdf",
-  "lit-review",
-  "topics",
-  "paraphraser",
-  "citation",
-  "extract",
-  "detector",
-  "diagram",
-  "search",
-  "review",
-  "report",
-  "analyse",
-]);
-
-const DOCUMENT_PREVIEW_TABS = new Set<LeftTab>(["library"]);
-
-function getToolLabel(tab: LeftTab) {
-  switch (tab) {
-    case "writer":
-    case "report":
-      return "AI Writer";
-    case "chat-pdf":
-      return "Chat with PDF";
-    case "lit-review":
-    case "review":
-      return "Literature Review";
-    case "topics":
-    case "search":
-      return "Find Topics";
-    case "paraphraser":
-      return "Paraphraser";
-    case "citation":
-      return "Citation Generator";
-    case "extract":
-    case "analyse":
-      return "Extract Data";
-    case "detector":
-      return "AI Detector";
-    case "diagram":
-      return "Generate Diagram";
-    default:
-      return "Document Analysis";
-  }
-}
+type LeftTab = "dashboard" | "library" | ToolId;
 
 function LoadingPane() {
-  return (
-    <div className="h-full flex items-center justify-center text-sm text-gray-400">Đang tải...</div>
-  );
+  return <div className="h-full flex items-center justify-center text-sm text-gray-400">Đang tải...</div>;
 }
 
 export default function App() {
@@ -152,7 +76,7 @@ export default function App() {
   });
 
   const currentDoc = selectedDocIndex !== null ? documents[selectedDocIndex] ?? null : null;
-  const needsDocument = DOCUMENT_TOOL_TABS.has(leftTab) || DOCUMENT_PREVIEW_TABS.has(leftTab);
+  const currentTool = leftTab !== "dashboard" && leftTab !== "library" ? TOOL_CONFIG[leftTab] : null;
 
   const metadataEntries = useMemo(() => {
     if (!currentDoc?.info) {
@@ -191,49 +115,8 @@ export default function App() {
     setIsSettingsOpen(false);
   };
 
-  const renderCenterContent = () => {
-    if (leftTab === "dashboard") {
-      return (
-        <motion.div
-          key="dashboard"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          className="h-full"
-        >
-          <Dashboard onToolClick={(toolId) => setLeftTab(toolId as LeftTab)} />
-        </motion.div>
-      );
-    }
-
-    if (leftTab === "notebooks" || leftTab === "gallery") {
-      return (
-        <motion.div
-          key={leftTab}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0, scale: 0.98 }}
-          className="h-full flex flex-col items-center justify-center text-center p-8"
-        >
-          <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-6">
-            {leftTab === "notebooks" ? (
-              <Notebook className="w-10 h-10 text-gray-300" />
-            ) : (
-              <Users className="w-10 h-10 text-gray-300" />
-            )}
-          </div>
-          <h3 className="text-xl font-bold text-gray-900 mb-2">
-            {leftTab === "notebooks" ? "My Notebooks" : "Agent Gallery"}
-          </h3>
-          <p className="text-gray-500 max-w-md">
-            Khu vực này chưa được triển khai chức năng. Hiện tại bạn có thể tải tài liệu lên và
-            dùng các công cụ phân tích ở thanh bên trái.
-          </p>
-        </motion.div>
-      );
-    }
-
-    if (!currentDoc && leftTab === "library") {
+  const renderLibrary = () => {
+    if (!currentDoc) {
       return (
         <motion.div
           key="upload"
@@ -251,21 +134,57 @@ export default function App() {
       );
     }
 
-    if (!currentDoc && needsDocument) {
+    return (
+      <motion.div
+        key={`library-${selectedDocIndex ?? "none"}`}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="max-w-4xl mx-auto"
+      >
+        <div className="bg-white rounded-2xl shadow-sm border p-8">
+          <div className="flex items-start justify-between mb-8 gap-4">
+            <div>
+              <div className="flex items-center gap-2 text-blue-600 mb-2">
+                <Library className="w-4 h-4" />
+                <span className="text-xs font-bold uppercase tracking-widest">Library Preview</span>
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900">{currentDoc.filename}</h2>
+              <p className="text-gray-500 mt-1">Số trang: {currentDoc.numpages}</p>
+            </div>
+            <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-500">
+              {documents.length} tài liệu trong thư viện
+            </div>
+          </div>
+
+          <div className="p-6 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">Nội dung tài liệu</h3>
+            <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed max-h-[600px] overflow-y-auto pr-4 custom-scrollbar whitespace-pre-wrap">
+              {currentDoc.text.length > 50000 ? `${currentDoc.text.slice(0, 50000)}...` : currentDoc.text}
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    );
+  };
+
+  const renderTool = (toolId: ToolId) => {
+    const tool = TOOL_CONFIG[toolId];
+
+    if (tool.requiresDocuments && documents.length === 0) {
       return (
         <motion.div
-          key={`empty-${leftTab}`}
+          key={`empty-${toolId}`}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0, scale: 0.98 }}
           className="h-full flex flex-col items-center justify-center text-center p-8"
         >
           <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-6">
-            <FileText className="w-10 h-10 text-gray-300" />
+            <tool.icon className="w-10 h-10 text-gray-300" />
           </div>
-          <h3 className="text-xl font-bold text-gray-900 mb-2">Chưa chọn tài liệu</h3>
-          <p className="text-gray-500 max-w-sm">
-            Hãy mở thư viện và tải lên hoặc chọn một tệp PDF trước khi dùng công cụ này.
+          <h3 className="text-xl font-bold text-gray-900 mb-2">Chưa có tài liệu trong thư viện</h3>
+          <p className="text-gray-500 max-w-md">
+            Công cụ này dùng toàn bộ các tài liệu đã tải lên. Hãy mở thư viện và tải PDF trước khi chạy.
           </p>
           <button
             onClick={() => setLeftTab("library")}
@@ -277,62 +196,56 @@ export default function App() {
       );
     }
 
-    if (!currentDoc) {
-      return null;
-    }
-
     return (
       <motion.div
-        key={`${leftTab}-${selectedDocIndex ?? "none"}`}
+        key={toolId}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="max-w-4xl mx-auto"
+        className="max-w-5xl mx-auto"
       >
         <div className="bg-white rounded-2xl shadow-sm border p-8">
           <div className="flex items-start justify-between mb-8 gap-4">
             <div>
               <div className="flex items-center gap-2 text-blue-600 mb-2">
-                <FileText className="w-4 h-4" />
-                <span className="text-xs font-bold uppercase tracking-widest">
-                  {getToolLabel(leftTab)}
-                </span>
+                <tool.icon className="w-4 h-4" />
+                <span className="text-xs font-bold uppercase tracking-widest">{tool.title}</span>
               </div>
-              <h2 className="text-2xl font-bold text-gray-900">{currentDoc.filename}</h2>
-              <p className="text-gray-500 mt-1">Số trang: {currentDoc.numpages}</p>
+              <h2 className="text-2xl font-bold text-gray-900">{tool.title}</h2>
+              <p className="text-gray-500 mt-1">{tool.description}</p>
             </div>
-            <button
-              onClick={() => {
-                setLeftTab("dashboard");
-                setSelectedDocIndex(null);
-              }}
-              className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Quay lại
-            </button>
+            <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-500">
+              {documents.length} tài liệu sẵn sàng
+            </div>
           </div>
 
-          <div className="space-y-8">
-            {DOCUMENT_TOOL_TABS.has(leftTab) ? (
-              <Suspense fallback={<LoadingPane />}>
-                <ToolView tool={leftTab} documentText={currentDoc.text} apiKeys={apiKeys} />
-              </Suspense>
-            ) : (
-              <div className="p-6 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
-                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">
-                  Nội dung tài liệu
-                </h3>
-                <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed max-h-[600px] overflow-y-auto pr-4 custom-scrollbar whitespace-pre-wrap">
-                  {currentDoc.text.length > 50000
-                    ? `${currentDoc.text.slice(0, 50000)}...`
-                    : currentDoc.text}
-                </div>
-              </div>
-            )}
-          </div>
+          <Suspense fallback={<LoadingPane />}>
+            <ToolView tool={toolId} documents={documents} apiKeys={apiKeys} />
+          </Suspense>
         </div>
       </motion.div>
     );
+  };
+
+  const renderCenterContent = () => {
+    if (leftTab === "dashboard") {
+      return (
+        <motion.div
+          key="dashboard"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          className="h-full"
+        >
+          <Dashboard onToolClick={setLeftTab} />
+        </motion.div>
+      );
+    }
+
+    if (leftTab === "library") {
+      return renderLibrary();
+    }
+
+    return renderTool(leftTab);
   };
 
   return (
@@ -346,13 +259,9 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-4">
-          <div className="relative hidden md:block">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Tìm kiếm trong thư viện..."
-              className="pl-10 pr-4 py-2 bg-gray-100 rounded-full text-sm border-none focus:ring-2 focus:ring-blue-500 w-64 transition-all"
-            />
+          <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-gray-100 rounded-full text-sm text-gray-500">
+            <Library className="w-4 h-4" />
+            <span>{documents.length} tài liệu</span>
           </div>
           <button className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center hover:bg-gray-300 transition-colors">
             <span className="text-sm font-bold">AT</span>
@@ -364,7 +273,7 @@ export default function App() {
         <aside
           className={cn(
             "bg-white border-r transition-all duration-300 flex flex-col",
-            isSidebarOpen ? "w-64" : "w-0 opacity-0 overflow-hidden",
+            isSidebarOpen ? "w-72" : "w-0 opacity-0 overflow-hidden",
           )}
         >
           <div className="p-4 flex-1 overflow-y-auto custom-scrollbar">
@@ -400,8 +309,8 @@ export default function App() {
                     <button
                       key={`${doc.filename}-${idx}`}
                       onClick={() => {
-                        setLeftTab("library");
                         setSelectedDocIndex(idx);
+                        setLeftTab("library");
                       }}
                       className={cn(
                         "w-full text-left px-3 py-1.5 rounded-md text-xs truncate transition-all",
@@ -417,129 +326,23 @@ export default function App() {
                 </div>
               )}
 
-              <button
-                onClick={() => setLeftTab("notebooks")}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-                  leftTab === "notebooks"
-                    ? "bg-blue-50 text-blue-700 font-medium"
-                    : "text-gray-600 hover:bg-gray-50",
-                )}
-              >
-                <Notebook className="w-4 h-4" />
-                <span>My Notebooks</span>
-              </button>
-              <button
-                onClick={() => setLeftTab("gallery")}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-                  leftTab === "gallery"
-                    ? "bg-blue-50 text-blue-700 font-medium"
-                    : "text-gray-600 hover:bg-gray-50",
-                )}
-              >
-                <Users className="w-4 h-4" />
-                <span>Agent Gallery</span>
-              </button>
-
               <div className="h-px bg-gray-100 my-4 mx-2" />
 
-              <button
-                onClick={() => setLeftTab("writer")}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-                  leftTab === "writer"
-                    ? "bg-blue-50 text-blue-700 font-medium"
-                    : "text-gray-600 hover:bg-gray-50",
-                )}
-              >
-                <PenTool className="w-4 h-4" />
-                <span>AI Writer</span>
-              </button>
-              <button
-                onClick={() => setLeftTab("chat-pdf")}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-                  leftTab === "chat-pdf"
-                    ? "bg-blue-50 text-blue-700 font-medium"
-                    : "text-gray-600 hover:bg-gray-50",
-                )}
-              >
-                <MessageSquare className="w-4 h-4" />
-                <span>Chat with PDF</span>
-              </button>
-              <button
-                onClick={() => setLeftTab("lit-review")}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-                  leftTab === "lit-review"
-                    ? "bg-blue-50 text-blue-700 font-medium"
-                    : "text-gray-600 hover:bg-gray-50",
-                )}
-              >
-                <FileSearch className="w-4 h-4" />
-                <span>Literature Review</span>
-              </button>
-              <button
-                onClick={() => setLeftTab("topics")}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-                  leftTab === "topics"
-                    ? "bg-blue-50 text-blue-700 font-medium"
-                    : "text-gray-600 hover:bg-gray-50",
-                )}
-              >
-                <Search className="w-4 h-4" />
-                <span>Find Topics</span>
-              </button>
-              <button
-                onClick={() => setLeftTab("paraphraser")}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-                  leftTab === "paraphraser"
-                    ? "bg-blue-50 text-blue-700 font-medium"
-                    : "text-gray-600 hover:bg-gray-50",
-                )}
-              >
-                <Hash className="w-4 h-4" />
-                <span>Paraphraser</span>
-              </button>
-              <button
-                onClick={() => setLeftTab("citation")}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-                  leftTab === "citation"
-                    ? "bg-blue-50 text-blue-700 font-medium"
-                    : "text-gray-600 hover:bg-gray-50",
-                )}
-              >
-                <Quote className="w-4 h-4" />
-                <span>Citation Generator</span>
-              </button>
-              <button
-                onClick={() => setLeftTab("extract")}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-                  leftTab === "extract"
-                    ? "bg-blue-50 text-blue-700 font-medium"
-                    : "text-gray-600 hover:bg-gray-50",
-                )}
-              >
-                <Database className="w-4 h-4" />
-                <span>Extract Data</span>
-              </button>
-              <button
-                onClick={() => setLeftTab("detector")}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-                  leftTab === "detector"
-                    ? "bg-blue-50 text-blue-700 font-medium"
-                    : "text-gray-600 hover:bg-gray-50",
-                )}
-              >
-                <ShieldCheck className="w-4 h-4" />
-                <span>AI Detector</span>
-              </button>
+              {TOOL_DEFINITIONS.map((tool) => (
+                <button
+                  key={tool.id}
+                  onClick={() => setLeftTab(tool.id)}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
+                    leftTab === tool.id
+                      ? "bg-blue-50 text-blue-700 font-medium"
+                      : "text-gray-600 hover:bg-gray-50",
+                  )}
+                >
+                  <tool.icon className="w-4 h-4" />
+                  <span>{tool.shortLabel}</span>
+                </button>
+              ))}
 
               <div className="h-px bg-gray-100 my-4 mx-2" />
 
@@ -556,12 +359,9 @@ export default function App() {
           <div className="p-4 border-t">
             <div className="bg-gray-50 p-3 rounded-xl">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                Dung lượng
+                Thư viện
               </p>
-              <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500 w-[15%]" />
-              </div>
-              <p className="text-[10px] text-gray-500 mt-2">Đã dùng 150MB / 1GB</p>
+              <p className="text-sm text-gray-600">{documents.length} tài liệu đang sẵn sàng để phân tích</p>
             </div>
           </div>
         </aside>
@@ -571,16 +371,14 @@ export default function App() {
             onClick={() => setIsSidebarOpen((prev) => !prev)}
             className="absolute left-0 top-1/2 -translate-y-1/2 z-40 bg-white border border-l-0 rounded-r-lg p-1 shadow-sm hover:bg-gray-50 transition-colors"
           >
-            <ChevronRight
-              className={cn("w-4 h-4 transition-transform", isSidebarOpen && "rotate-180")}
-            />
+            <ChevronRight className={cn("w-4 h-4 transition-transform", isSidebarOpen && "rotate-180")} />
           </button>
 
           <div className="flex-1 overflow-y-auto p-8">
             <AnimatePresence mode="wait">{renderCenterContent()}</AnimatePresence>
           </div>
 
-          {currentDoc && needsDocument && (
+          {leftTab === "library" && currentDoc && (
             <aside className="w-[400px] bg-white border-l flex flex-col">
               <div className="flex border-b">
                 <button
@@ -676,24 +474,16 @@ export default function App() {
                       </h3>
                       <div className="space-y-4">
                         <div className="bg-gray-50 p-4 rounded-xl border">
-                          <p className="text-xs font-semibold text-gray-400 uppercase mb-1">
-                            Tên file
-                          </p>
-                          <p className="text-sm font-medium text-gray-800 break-all">
-                            {currentDoc.filename}
-                          </p>
+                          <p className="text-xs font-semibold text-gray-400 uppercase mb-1">Tên file</p>
+                          <p className="text-sm font-medium text-gray-800 break-all">{currentDoc.filename}</p>
                         </div>
                         <div className="bg-gray-50 p-4 rounded-xl border">
-                          <p className="text-xs font-semibold text-gray-400 uppercase mb-1">
-                            Số trang
-                          </p>
+                          <p className="text-xs font-semibold text-gray-400 uppercase mb-1">Số trang</p>
                           <p className="text-sm font-medium text-gray-800">{currentDoc.numpages}</p>
                         </div>
                         {metadataEntries.map(([key, value]) => (
                           <div key={key} className="bg-gray-50 p-4 rounded-xl border">
-                            <p className="text-xs font-semibold text-gray-400 uppercase mb-1">
-                              {key}
-                            </p>
+                            <p className="text-xs font-semibold text-gray-400 uppercase mb-1">{key}</p>
                             <p className="text-sm font-medium text-gray-800 break-all">{value}</p>
                           </div>
                         ))}

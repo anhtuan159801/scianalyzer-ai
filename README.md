@@ -5,6 +5,11 @@
 LLM được fallback theo thứ tự:
 `Groq -> OpenRouter -> Hugging Face -> Gemini`
 
+Logic công cụ:
+- `Literature Review`, `Overview Matrix`, `Find Topics`, `Extract Data`, `Chat with PDF` dùng toàn bộ thư viện tài liệu đã tải lên
+- `Paraphraser`, `AI Detector` dùng trực tiếp văn bản người dùng nhập
+- `AI Writer`, `Citation Generator` có thể dùng tài liệu nguồn hoặc chạy từ prompt / metadata người dùng nhập
+
 ## Yêu cầu
 
 - Node.js 20+
