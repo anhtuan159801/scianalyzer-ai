@@ -223,30 +223,19 @@ async function startServer() {
         return res.status(400).json({ error: "No file uploaded" });
       }
 
-      const PDFParse = (pdfParse as { PDFParse?: new (options: { data: Uint8Array }) => {
-        getText: () => Promise<{ text: string; total: number }>;
-        getInfo: () => Promise<{ info?: Record<string, unknown>; metadata?: unknown; total: number }>;
-        destroy: () => Promise<void>;
-      } }).PDFParse;
-
-      if (typeof PDFParse !== "function") {
+      if (typeof pdfParse !== "function") {
         throw new Error("PDF parser not initialized correctly");
       }
 
-      const parser = new PDFParse({ data: req.file.buffer });
-      try {
-        const [textResult, infoResult] = await Promise.all([parser.getText(), parser.getInfo()]);
+      const parsed = await pdfParse(req.file.buffer);
 
-        return res.json({
-          filename: Buffer.from(req.file.originalname, "latin1").toString("utf8"),
-          text: textResult.text,
-          info: infoResult.info,
-          metadata: infoResult.metadata,
-          numpages: textResult.total || infoResult.total || 0,
-        });
-      } finally {
-        await parser.destroy().catch(() => undefined);
-      }
+      return res.json({
+        filename: Buffer.from(req.file.originalname, "latin1").toString("utf8"),
+        text: parsed.text,
+        info: parsed.info,
+        metadata: parsed.metadata,
+        numpages: parsed.numpages,
+      });
     } catch (error) {
       const err = error as Error & { name?: string };
       const errorName = err.name || "";

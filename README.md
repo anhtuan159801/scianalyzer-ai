@@ -60,4 +60,5 @@ Run container:
 
 - Script `clean` đã tương thích Windows.
 - Fallback LLM được xử lý trong backend qua `/api/llm/generate`.
+- PDF upload đang dùng `pdf-parse@1.1.1` để ổn định trên môi trường server như Render.
 - Repo này có thêm `SKILL.md` để AI agent hiểu đúng luồng sửa code trong dự án.
