@@ -223,24 +223,30 @@ async function startServer() {
         return res.status(400).json({ error: "No file uploaded" });
       }
 
-      let parsePdf = pdfParse;
-      if (typeof parsePdf !== "function" && (pdfParse as { default?: unknown }).default) {
-        parsePdf = (pdfParse as { default: typeof pdfParse }).default;
-      }
+      const PDFParse = (pdfParse as { PDFParse?: new (options: { data: Uint8Array }) => {
+        getText: () => Promise<{ text: string; total: number }>;
+        getInfo: () => Promise<{ info?: Record<string, unknown>; metadata?: unknown; total: number }>;
+        destroy: () => Promise<void>;
+      } }).PDFParse;
 
-      if (typeof parsePdf !== "function") {
+      if (typeof PDFParse !== "function") {
         throw new Error("PDF parser not initialized correctly");
       }
 
-      const data = await parsePdf(req.file.buffer);
+      const parser = new PDFParse({ data: req.file.buffer });
+      try {
+        const [textResult, infoResult] = await Promise.all([parser.getText(), parser.getInfo()]);
 
-      return res.json({
-        filename: Buffer.from(req.file.originalname, "latin1").toString("utf8"),
-        text: data.text,
-        info: data.info,
-        metadata: data.metadata,
-        numpages: data.numpages,
-      });
+        return res.json({
+          filename: Buffer.from(req.file.originalname, "latin1").toString("utf8"),
+          text: textResult.text,
+          info: infoResult.info,
+          metadata: infoResult.metadata,
+          numpages: textResult.total || infoResult.total || 0,
+        });
+      } finally {
+        await parser.destroy().catch(() => undefined);
+      }
     } catch (error) {
       const err = error as Error & { name?: string };
       const errorName = err.name || "";
