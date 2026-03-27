@@ -40,6 +40,22 @@ const ToolView = lazy(() =>
   import("./components/ToolView").then((module) => ({ default: module.ToolView })),
 );
 
+function safeStorageGet(key: string) {
+  try {
+    return window.localStorage.getItem(key) || "";
+  } catch {
+    return "";
+  }
+}
+
+function safeStorageSet(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Ignore storage write failures so the UI still renders.
+  }
+}
+
 interface DocumentData {
   filename: string;
   text: string;
@@ -129,10 +145,10 @@ export default function App() {
   const [leftTab, setLeftTab] = useState<LeftTab>("dashboard");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [apiKeys, setApiKeys] = useState<ApiKeys>({
-    groq: localStorage.getItem("groq_api_key") || "",
-    openrouter: localStorage.getItem("openrouter_api_key") || "",
-    huggingface: localStorage.getItem("huggingface_api_key") || "",
-    gemini: localStorage.getItem("gemini_api_key") || "",
+    groq: safeStorageGet("groq_api_key"),
+    openrouter: safeStorageGet("openrouter_api_key"),
+    huggingface: safeStorageGet("huggingface_api_key"),
+    gemini: safeStorageGet("gemini_api_key"),
   });
 
   const currentDoc = selectedDocIndex !== null ? documents[selectedDocIndex] ?? null : null;
@@ -168,10 +184,10 @@ export default function App() {
   };
 
   const saveApiKeys = () => {
-    localStorage.setItem("groq_api_key", apiKeys.groq);
-    localStorage.setItem("openrouter_api_key", apiKeys.openrouter);
-    localStorage.setItem("huggingface_api_key", apiKeys.huggingface);
-    localStorage.setItem("gemini_api_key", apiKeys.gemini);
+    safeStorageSet("groq_api_key", apiKeys.groq);
+    safeStorageSet("openrouter_api_key", apiKeys.openrouter);
+    safeStorageSet("huggingface_api_key", apiKeys.huggingface);
+    safeStorageSet("gemini_api_key", apiKeys.gemini);
     setIsSettingsOpen(false);
   };
 
