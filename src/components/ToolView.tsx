@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Check, Copy, Loader2, Sparkles } from "lucide-react";
 import Markdown from "react-markdown";
 import { motion } from "motion/react";
@@ -34,6 +34,9 @@ interface MatrixPayload {
   synthesis: string;
 }
 
+type SourceMode = "library" | "text";
+type CitationStyle = "APA 7" | "MLA 9" | "Vancouver" | "IEEE" | "Chicago";
+
 const MAX_CORPUS_CHARS = 28000;
 const MAX_CHARS_PER_DOC = 6000;
 
@@ -59,10 +62,16 @@ ${excerpt}`;
     .join("\n\n");
 }
 
-function buildPrompt(tool: ToolId, userInput: string, hasDocuments: boolean) {
+function buildPrompt(
+  tool: ToolId,
+  userInput: string,
+  hasDocuments: boolean,
+  sourceMode: SourceMode,
+  citationStyle: CitationStyle,
+) {
   switch (tool) {
     case "writer":
-      return hasDocuments
+      return sourceMode === "library" && hasDocuments
         ? `Dựa trên toàn bộ tài liệu nguồn đã cung cấp, hãy viết nội dung học thuật theo yêu cầu sau: ${userInput || "Viết một đoạn tổng quan nghiên cứu ngắn gọn, có cấu trúc rõ ràng."}`
         : `Không có tài liệu nguồn. Hãy viết nội dung học thuật theo yêu cầu sau và nói rõ đây là bản nháp không grounded theo tài liệu: ${userInput || "Viết một đoạn tổng quan nghiên cứu ngắn gọn, có cấu trúc rõ ràng."}`;
     case "chat-pdf":
@@ -109,9 +118,23 @@ Mỗi mục cần có:
       return `Hãy diễn đạt lại đoạn văn sau bằng văn phong học thuật rõ ràng, giữ nguyên ý nghĩa nhưng tránh trùng lặp câu chữ. Nếu cần, hãy đưa ra 2 phiên bản khác nhau:
 ${userInput}`;
     case "citation":
-      return hasDocuments && !userInput.trim()
-        ? `Hãy tạo danh sách trích dẫn cho toàn bộ tài liệu đã tải lên theo các định dạng APA, MLA và Vancouver. Nếu metadata thiếu, hãy nêu rõ phần không xác định.`
-        : `Hãy tạo trích dẫn theo APA, MLA và Vancouver từ thông tin sau. Nếu dữ liệu thiếu thì nêu rõ phần còn thiếu:
+      return sourceMode === "library" && hasDocuments && !userInput.trim()
+        ? `Hãy tạo danh sách trích dẫn cho toàn bộ tài liệu đã tải lên theo đúng duy nhất chuẩn ${citationStyle}.
+Yêu cầu nghiêm ngặt:
+- Không trộn nhiều chuẩn với nhau
+- Không tự bịa metadata
+- Giữ đúng thứ tự trường, dấu câu và cách viết hoa theo chuẩn ${citationStyle}
+- Những thành phần cần in nghiêng theo chuẩn thì dùng markdown italic, ví dụ *Journal Title* hoặc *Book Title*
+- Nếu thiếu metadata thì ghi rõ trường còn thiếu dưới mỗi mục
+Trả về kết quả dưới dạng danh sách rõ ràng, mỗi tài liệu một mục.`
+        : `Hãy tạo trích dẫn theo đúng duy nhất chuẩn ${citationStyle} từ thông tin sau.
+Yêu cầu nghiêm ngặt:
+- Không trộn nhiều chuẩn với nhau
+- Không tự bịa metadata
+- Giữ đúng thứ tự trường, dấu câu và cách viết hoa theo chuẩn ${citationStyle}
+- Những thành phần cần in nghiêng theo chuẩn thì dùng markdown italic, ví dụ *Journal Title* hoặc *Book Title*
+- Nếu dữ liệu thiếu thì nêu rõ phần còn thiếu
+Thông tin đầu vào:
 ${userInput}`;
     case "extract":
       return `Hãy trích xuất dữ liệu và phát hiện quan trọng từ toàn bộ tài liệu đã tải lên.
@@ -137,10 +160,22 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
   const [isLoading, setIsLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [userInput, setUserInput] = useState("");
+  const [sourceMode, setSourceMode] = useState<SourceMode>("text");
+  const [citationStyle, setCitationStyle] = useState<CitationStyle>("APA 7");
   const info = TOOL_CONFIG[tool];
   const hasDocuments = documents.length > 0;
+  const canSelectSourceMode = tool === "writer" || tool === "citation";
 
   const corpusText = useMemo(() => buildCorpus(documents), [documents]);
+
+  useEffect(() => {
+    setResult(null);
+    setMatrixPayload(null);
+    setCopied(false);
+    setUserInput("");
+    setCitationStyle("APA 7");
+    setSourceMode(tool === "writer" || tool === "citation" ? (hasDocuments ? "library" : "text") : "text");
+  }, [tool, hasDocuments]);
 
   const handleAction = async () => {
     if (info.acceptsUserText && (tool === "paraphraser" || tool === "detector") && !userInput.trim()) {
@@ -153,14 +188,19 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
       return;
     }
 
+    if (sourceMode === "text" && (tool === "writer" || tool === "citation") && !userInput.trim()) {
+      setResult("Vui lòng nhập nội dung hoặc metadata trước khi chạy công cụ này.");
+      return;
+    }
+
     setIsLoading(true);
     setResult(null);
     setMatrixPayload(null);
 
     try {
-      const prompt = buildPrompt(tool, userInput.trim(), hasDocuments);
+      const prompt = buildPrompt(tool, userInput.trim(), hasDocuments, sourceMode, citationStyle);
       const contextText =
-        hasDocuments && corpusText
+        sourceMode === "library" && hasDocuments && corpusText
           ? corpusText
           : `Người dùng không cung cấp tài liệu nguồn. Hãy xử lý dựa trên yêu cầu sau:\n${userInput.trim()}`;
 
@@ -230,13 +270,67 @@ export const ToolView: React.FC<ToolViewProps> = ({ tool, documents, apiKeys }) 
         </div>
 
         <div className="mb-4 flex flex-wrap gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wider px-3 py-1 rounded-full bg-white border text-gray-600">
-            {documents.length} tài liệu trong thư viện
-          </span>
-          <span className="text-xs font-semibold uppercase tracking-wider px-3 py-1 rounded-full bg-white border text-gray-600">
-            {info.requiresDocuments ? "Dùng toàn bộ thư viện" : "Không bắt buộc tài liệu"}
-          </span>
+          {canSelectSourceMode ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setSourceMode("library")}
+                disabled={!hasDocuments}
+                className={`text-xs font-semibold uppercase tracking-wider px-3 py-1 rounded-full border transition-colors ${
+                  sourceMode === "library"
+                    ? "bg-blue-600 border-blue-600 text-white"
+                    : "bg-white border-gray-300 text-gray-600"
+                } ${!hasDocuments ? "opacity-50 cursor-not-allowed" : ""}`}
+              >
+                {documents.length} tài liệu trong thư viện
+              </button>
+              <button
+                type="button"
+                onClick={() => setSourceMode("text")}
+                className={`text-xs font-semibold uppercase tracking-wider px-3 py-1 rounded-full border transition-colors ${
+                  sourceMode === "text"
+                    ? "bg-blue-600 border-blue-600 text-white"
+                    : "bg-white border-gray-300 text-gray-600"
+                }`}
+              >
+                Không bắt buộc tài liệu
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="text-xs font-semibold uppercase tracking-wider px-3 py-1 rounded-full bg-white border text-gray-600">
+                {documents.length} tài liệu trong thư viện
+              </span>
+              <span className="text-xs font-semibold uppercase tracking-wider px-3 py-1 rounded-full bg-white border text-gray-600">
+                {info.requiresDocuments ? "Dùng toàn bộ thư viện" : "Không bắt buộc tài liệu"}
+              </span>
+            </>
+          )}
         </div>
+
+        {tool === "citation" && (
+          <div className="mb-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
+              Chọn chuẩn trích dẫn
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {(["APA 7", "MLA 9", "Vancouver", "IEEE", "Chicago"] as CitationStyle[]).map((style) => (
+                <button
+                  key={style}
+                  type="button"
+                  onClick={() => setCitationStyle(style)}
+                  className={`text-xs font-semibold px-3 py-2 rounded-full border transition-colors ${
+                    citationStyle === style
+                      ? "bg-blue-600 border-blue-600 text-white"
+                      : "bg-white border-gray-300 text-gray-600"
+                  }`}
+                >
+                  {style}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {info.acceptsUserText && (
           <div className="mb-4">
